@@ -1,8 +1,9 @@
 # VIKMO DealerDesk
 
-**Track:** AI / ML Intern Track (with complete Order Engine & Supplier Sync bonus components)  
+**Track:** AI / ML Intern Track (with complete Order Engine, Supplier Sync, and Dealer Portal frontend bonus components)  
 **LLM Provider & Model:** Google Gemini (`gemini-2.5-flash` / `gemini-1.5-flash`) via `GEMINI_API_KEY`  
-**Video Walkthrough Link:** *(Insert unlisted video link here before submission)*  
+**Video Walkthrough Link:** *(Insert unlisted YouTube/Loom video link here)*  
+**Video Walkthrough Script:** See [`WALKTHROUGH_SCRIPT.md`](file:///D:/vikmo/WALKTHROUGH_SCRIPT.md) for full 5-minute timed talking points.  
 
 ---
 
