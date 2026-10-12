@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VIKMO DealerDesk — Intelligent Parts Operating System</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel for in-browser JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    function App() {
+      const [activeTab, setActiveTab] = useState('catalogue');
+      const [dealerId, setDealerId] = useState(1);
+      const [dealers, setDealers] = useState([]);
+      const [cart, setCart] = useState([]);
+      const [currentOrder, setCurrentOrder] = useState(null);
+      const [alert, setAlert] = useState(null);
+
+      useEffect(() => {
+        fetch('/api/dealers/')
+          .then(r => r.json())
+          .then(data => {
+            if (data.results && data.results.length) {
+              setDealers(data.results);
+              setDealerId(data.results[0].id);
+            }
+          })
+          .catch(e => console.error(e));
+      }, []);
+
+      const showAlert = (type, title, message) => {
+        setAlert({ type, title, message });
+        setTimeout(() => setAlert(null), 6000);
+      };
+
+      const addToCart = (product) => {
+        setCart(prev => {
+          const idx = prev.findIndex(item => item.sku === product.sku);
+          if (idx > -1) {
+            const next = [...prev];
+            next[idx].quantity += 1;
+            return next;
+          }
+          return [...prev, { ...product, quantity: 1 }];
+        });
+        showAlert('success', 'Added to Order', `${product.name} (${product.sku}) added to cart.`);
+      };
+
+      const updateCartQty = (sku, delta) => {
+        setCart(prev => prev.map(item => {
+          if (item.sku === sku) {
+            const nq = Math.max(1, item.quantity + delta);
+            return { ...item, quantity: nq };
+          }
+          return item;
+        }));
+      };
+
+      const removeFromCart = (sku) => {
+        setCart(prev => prev.filter(item => item.sku !== sku));
+      };
+
+      return (
+        <div class="flex flex-col min-h-screen">
+          {/* Header */}
+          <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-amber-500/20 text-lg">
+                VD
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h1 class="font-bold text-lg tracking-tight text-white">VIKMO DealerDesk</h1>
+                  <span class="text-xs bg-amber-500/10 text-amber-400 font-semibold px-2 py-0.5 rounded-full border border-amber-500/20">AI-Native OS</span>
+                </div>
+                <p class="text-xs text-slate-400">Automotive Spare Parts Distribution</p>
+              </div>
+            </div>
+
+            {/* Navigation Tabs */}
+            <nav class="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800 text-sm font-medium">
+              <button
+                onClick={() => setActiveTab('catalogue')}
+                class={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'catalogue' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+                Catalogue
+              </button>
+              <button
+                onClick={() => setActiveTab('cart')}
+                class={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'cart' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+                Order Cart
+                {cart.length > 0 && <span class="bg-amber-500 text-slate-950 font-bold text-xs px-1.5 py-0.2 rounded-full">{cart.length}</span>}
+              </button>
+              <button
+                onClick={() => setActiveTab('assistant')}
+                class={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${activeTab === 'assistant' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+                AI Assistant
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              </button>
+              <button
+                onClick={() => setActiveTab('forecast')}
+                class={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'forecast' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+                Demand & Reorder
+              </button>
+              <button
+                onClick={() => setActiveTab('sync')}
+                class={`px-3 py-1.5 rounded-lg transition-all ${activeTab === 'sync' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}>
+                Supplier Sync
+              </button>
+            </nav>
+
+            {/* Dealer Selector */}
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate-400 font-medium">Dealer:</span>
+              <select
+                value={dealerId}
+                onChange={e => setDealerId(Number(e.target.value))}
+                class="bg-slate-800 border border-slate-700 text-xs rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500">
+                {dealers.map(d => (
+                  <option key={d.id} value={d.id}>{d.dealer_code} - {d.name} ({d.city})</option>
+                ))}
+              </select>
+            </div>
+          </header>
+
+          {/* Alert Notification Banner */}
+          {alert && (
+            <div class={`px-6 py-3 border-b flex items-center justify-between transition-all ${
+              alert.type === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
+              alert.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' :
+              'bg-blue-500/10 border-blue-500/30 text-blue-300'
+            }`}>
+              <div class="flex items-center gap-2">
+                <span class="font-bold text-xs uppercase tracking-wider px-2 py-0.5 rounded bg-white/10">{alert.title}</span>
+                <span class="text-sm">{alert.message}</span>
+              </div>
+              <button onClick={() => setAlert(null)} class="text-slate-400 hover:text-white text-sm font-bold">✕</button>
+            </div>
+          )}
+
+          {/* Main Content Area */}
+          <main class="flex-1 p-6 max-w-7xl w-full mx-auto">
+            {activeTab === 'catalogue' && <CatalogueView onAddToCart={addToCart} />}
+            {activeTab === 'cart' && (
+              <CartOrderView
+                cart={cart}
+                updateCartQty={updateCartQty}
+                removeFromCart={removeFromCart}
+                dealerId={dealerId}
+                currentOrder={currentOrder}
+                setCurrentOrder={setCurrentOrder}
+                showAlert={showAlert}
+                setCart={setCart}
+              />
+            )}
+            {activeTab === 'assistant' && <AssistantView dealerId={dealerId} onAddToCart={addToCart} showAlert={showAlert} />}
+            {activeTab === 'forecast' && <ForecastReorderView />}
+            {activeTab === 'sync' && <SupplierSyncView showAlert={showAlert} />}
+          </main>
+
+          {/* Footer */}
+          <footer class="bg-slate-900 border-t border-slate-800 px-6 py-4 text-center text-xs text-slate-500 flex items-center justify-between">
+            <span>VIKMO DealerDesk · Advanced Distribution System</span>
+            <span>API Status: <span class="text-emerald-400 font-medium">200 OK</span> · PostgreSQL Engine</span>
+          </footer>
+        </div>
+      );
+    }
+
+    // ---- View 1: Catalogue ----------------------------------------------------
+    function CatalogueView({ onAddToCart }) {
+      const [products, setProducts] = useState([]);
+      const [search, setSearch] = useState('');
+      const [category, setCategory] = useState('');
+      const [vehicle, setVehicle] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [page, setPage] = useState(1);
+      const [totalCount, setTotalCount] = useState(0);
+
+      const categories = ['All', 'Brakes', 'Filters', 'Chains', 'Electricals', 'Oil', 'Grips', 'Suspension', 'Engine', 'Cables', 'Clutch'];
+
+      useEffect(() => {
+        fetchProducts();
+      }, [search, category, vehicle, page]);
+
+      const fetchProducts = () => {
+        setLoading(true);
+        const params = new URLSearchParams({ page, page_size: 16 });
+        if (search) params.append('search', search);
+        if (category && category !== 'All') params.append('category', category);
+        if (vehicle) params.append('vehicle', vehicle);
+
+        fetch(`/api/products/?${params.toString()}`)
+          .then(r => r.json())
+          .then(data => {
+            setProducts(data.results || []);
+            setTotalCount(data.count || 0);
+            setLoading(false);
+          })
+          .catch(() => setLoading(false));
+      };
+
+      return (
+        <div class="space-y-6">
+          {/* Controls Bar */}
+          <div class="bg-slate-900 border border-slate-800 p-4 rounded-2xl flex flex-wrap gap-3 items-center justify-between">
+            <div class="flex-1 min-w-[240px]">
+              <input
+                type="text"
+                placeholder="Search by part name, SKU, brand..."
+                value={search}
+                onChange={e => { setSearch(e.target.value); setPage(1); }}
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div class="min-w-[180px]">
+              <input
+                type="text"
+                placeholder="Filter vehicle (e.g. Pulsar 150, Duke)..."
+                value={vehicle}
+                onChange={e => { setVehicle(e.target.value); setPage(1); }}
+                class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div class="text-xs text-slate-400 font-medium">
+              Found <span class="text-white font-bold">{totalCount}</span> items
+            </div>
+          </div>
+
+          {/* Category Chips */}
+          <div class="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+            {categories.map(cat => (
+              <button
+                key={cat}
+                onClick={() => { setCategory(cat); setPage(1); }}
+                class={`px-3 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                  (category === cat || (!category && cat === 'All'))
+                    ? 'bg-indigo-600 text-white font-semibold'
+                    : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                }`}>
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Products Grid */}
+          {loading ? (
+            <div class="py-20 text-center text-slate-500 text-sm">Loading catalogue items...</div>
+          ) : products.length === 0 ? (
+            <div class="py-20 text-center text-slate-500 text-sm">No spare parts match your filters.</div>
+          ) : (
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {products.map(p => (
+                <div key={p.sku} class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between hover:border-slate-700 transition-all group">
+                  <div>
+                    <div class="flex items-center justify-between gap-2 mb-2">
+                      <span class="text-xs font-mono font-bold text-amber-400 bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20">{p.sku}</span>
+                      <span class={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        p.stock > 10 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                        p.stock > 0 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                        'bg-red-500/10 text-red-400 border border-red-500/20'
+                      }`}>
+                        {p.stock > 0 ? `${p.stock} in stock` : 'Out of stock'}
+                      </span>
+                    </div>
+                    <h3 class="font-semibold text-sm text-slate-100 group-hover:text-indigo-400 transition-colors line-clamp-2 mb-1">{p.name}</h3>
+                    <div class="text-xs text-slate-400 mb-1">
+                      <span class="font-medium text-slate-300">Fitment:</span> {p.vehicle_fitment}
+                    </div>
+                    <div class="text-xs text-slate-500 mb-3">
+                      Brand: <span class="text-slate-400 font-medium">{p.brand}</span> · Cat: {p.category}
+                    </div>
+                  </div>
+
+                  <div class="pt-3 border-t border-slate-800/80 flex items-center justify-between">
+                    <div>
+                      <div class="text-xs text-slate-500 leading-none">Dealer Price</div>
+                      <div class="text-lg font-bold text-white">₹{p.price}</div>
+                    </div>
+                    <button
+                      onClick={() => onAddToCart(p)}
+                      class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium px-3.5 py-2 rounded-xl transition-all shadow-md shadow-indigo-600/20 active:scale-95">
+                      + Add
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Pagination Controls */}
+          <div class="flex items-center justify-between pt-4 border-t border-slate-900 text-sm">
+            <button
+              disabled={page <= 1}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              class="px-4 py-1.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-800">
+              Previous
+            </button>
+            <span class="text-xs text-slate-400">Page {page} of {Math.ceil(totalCount / 16) || 1}</span>
+            <button
+              disabled={page * 16 >= totalCount}
+              onClick={() => setPage(p => p + 1)}
+              class="px-4 py-1.5 rounded-xl border border-slate-800 bg-slate-900 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-800">
+              Next
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ---- View 2: Cart & Order Engine ------------------------------------------
+    function CartOrderView({ cart, updateCartQty, removeFromCart, dealerId, currentOrder, setCurrentOrder, showAlert, setCart }) {
+      const [loading, setLoading] = useState(false);
+
+      const cartSubtotal = cart.reduce((acc, it) => acc + (parseFloat(it.price) * it.quantity), 0);
+      const cartTax = cart.reduce((acc, it) => {
+        const lineSub = parseFloat(it.price) * it.quantity;
+        return acc + Math.round(lineSub * 0.18 * 100) / 100;
+      }, 0);
+      const cartGrand = cartSubtotal + cartTax;
+
+      const handleCreateDraft = () => {
+        if (!cart.length) {
+          showAlert('error', 'Cart Empty', 'Please add products from catalogue.');
+          return;
+        }
+        setLoading(true);
+        const payload = {
+          dealer_id: dealerId,
+          items: cart.map(it => ({ sku: it.sku, quantity: it.quantity })),
+        };
+
+        fetch('/api/orders/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+          .then(async r => {
+            const data = await r.json();
+            if (!r.ok) throw data;
+            return data;
+          })
+          .then(order => {
+            setCurrentOrder(order);
+            setCart([]);
+            showAlert('success', 'Draft Created', `Order ${order.order_number} created as DRAFT.`);
+            setLoading(false);
+          })
+          .catch(err => {
+            showAlert('error', err?.error?.code || 'Error', err?.error?.message || 'Failed to create order.');
+            setLoading(false);
+          });
+      };
+
+      const handleAction = (action) => {
+        if (!currentOrder) return;
+        setLoading(true);
+        fetch(`/api/orders/${currentOrder.order_number}/${action}/`, { method: 'POST' })
+          .then(async r => {
+            const data = await r.json();
+            if (!r.ok) throw data;
+            return data;
+          })
+          .then(order => {
+            setCurrentOrder(order);
+            showAlert('success', 'Status Updated', `Order is now ${order.status}.`);
+            setLoading(false);
+          })
+          .catch(err => {
+            const e = err?.error || {};
+            showAlert('error', e.code || 'Action Failed', e.message || 'Operation failed.');
+            setLoading(false);
+          });
+      };
+
+      return (
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Active Cart */}
+          <div class="lg:col-span-2 space-y-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+              <h2 class="text-base font-bold text-white mb-4 flex items-center justify-between">
+                <span>Items in Order Cart</span>
+                <span class="text-xs text-slate-400 font-normal">{cart.length} item(s)</span>
+              </h2>
+
+              {cart.length === 0 ? (
+                <div class="py-12 text-center text-slate-500 text-sm">
+                  Your order cart is empty. Browse the catalogue or ask the AI assistant to add parts.
+                </div>
+              ) : (
+                <div class="space-y-3">
+                  {cart.map(item => {
+                    const lineSub = parseFloat(item.price) * item.quantity;
+                    const lineTax = Math.round(lineSub * 0.18 * 100) / 100;
+                    const lineTotal = lineSub + lineTax;
+                    return (
+                      <div key={item.sku} class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+                        <div class="flex-1 min-w-[200px]">
+                          <div class="flex items-center gap-2">
+                            <span class="font-mono text-xs font-bold text-amber-400">{item.sku}</span>
+                            <span class="text-xs text-slate-400">({item.brand})</span>
+                          </div>
+                          <div class="text-sm font-semibold text-slate-200">{item.name}</div>
+                          <div class="text-xs text-slate-400">₹{item.price} each · 18% GST: ₹{lineTax.toFixed(2)}</div>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                          <div class="flex items-center bg-slate-900 border border-slate-800 rounded-lg">
+                            <button onClick={() => updateCartQty(item.sku, -1)} class="px-2.5 py-1 text-slate-400 hover:text-white">-</button>
+                            <span class="px-2 text-sm font-semibold text-white">{item.quantity}</span>
+                            <button onClick={() => updateCartQty(item.sku, 1)} class="px-2.5 py-1 text-slate-400 hover:text-white">+</button>
+                          </div>
+                          <div class="text-right min-w-[80px]">
+                            <div class="text-xs text-slate-400 leading-none">Total</div>
+                            <div class="font-bold text-white text-sm">₹{lineTotal.toFixed(2)}</div>
+                          </div>
+                          <button onClick={() => removeFromCart(item.sku)} class="text-slate-500 hover:text-red-400 text-xs px-2 py-1">✕</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Order Summary & Lifecycle Panel */}
+          <div class="space-y-4">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <h3 class="text-base font-bold text-white">Financial Summary</h3>
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between text-slate-400">
+                  <span>Subtotal</span>
+                  <span class="font-semibold text-slate-200">₹{cartSubtotal.toFixed(2)}</span>
+                </div>
+                <div class="flex justify-between text-slate-400">
+                  <span>GST (18% per-line)</span>
+                  <span class="font-semibold text-slate-200">₹{cartTax.toFixed(2)}</span>
+                </div>
+                <div class="border-t border-slate-800 pt-2 flex justify-between text-base font-bold text-white">
+                  <span>Grand Total</span>
+                  <span class="text-amber-400">₹{cartGrand.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <button
+                disabled={!cart.length || loading}
+                onClick={handleCreateDraft}
+                class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-2.5 rounded-xl transition-all disabled:opacity-40 shadow-lg shadow-indigo-600/20">
+                {loading ? 'Processing...' : 'Create DRAFT Order'}
+              </button>
+            </div>
+
+            {/* Current Active Order Details */}
+            {currentOrder && (
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <div class="text-xs text-slate-400">Order Number</div>
+                    <div class="font-mono font-bold text-white text-sm">{currentOrder.order_number}</div>
+                  </div>
+                  <span class={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                    currentOrder.status === 'CONFIRMED' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                    currentOrder.status === 'DISPATCHED' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                    currentOrder.status === 'DELIVERED' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20' :
+                    currentOrder.status === 'CANCELLED' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                    'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                  }`}>
+                    {currentOrder.status}
+                  </span>
+                </div>
+
+                <div class="text-xs text-slate-400 space-y-1">
+                  <div>Lines: <span class="text-slate-200 font-medium">{currentOrder.items?.length || 0}</span></div>
+                  <div>Total: <span class="text-slate-200 font-bold">₹{currentOrder.grand_total}</span></div>
+                </div>
+
+                {/* State Machine Transition Buttons */}
+                <div class="pt-2 border-t border-slate-800 flex flex-wrap gap-2">
+                  {currentOrder.status === 'DRAFT' && (
+                    <>
+                      <button
+                        onClick={() => handleAction('confirm')}
+                        disabled={loading}
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold py-2 rounded-xl transition-all">
+                        Confirm Order
+                      </button>
+                      <button
+                        onClick={() => handleAction('cancel')}
+                        disabled={loading}
+                        class="px-3 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-xs font-semibold py-2 rounded-xl transition-all">
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                  {currentOrder.status === 'CONFIRMED' && (
+                    <>
+                      <button
+                        onClick={() => handleAction('dispatch')}
+                        disabled={loading}
+                        class="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold py-2 rounded-xl transition-all">
+                        Dispatch
+                      </button>
+                      <button
+                        onClick={() => handleAction('cancel')}
+                        disabled={loading}
+                        class="px-3 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 text-xs font-semibold py-2 rounded-xl transition-all">
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                  {currentOrder.status === 'DISPATCHED' && (
+                    <button
+                      onClick={() => handleAction('deliver')}
+                      disabled={loading}
+                      class="w-full bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold py-2 rounded-xl transition-all">
+                      Mark Delivered
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // ---- View 3: Dealer Assistant ---------------------------------------------
+    function AssistantView({ dealerId, onAddToCart, showAlert }) {
+      const [messages, setMessages] = useState([
+        {
+          role: 'assistant',
+          content: 'Hello! I am your VIKMO DealerDesk Assistant. How can I help you today? You can ask me to find spare parts for a specific motorcycle or car, check live warehouse stock and prices, or place a draft order.',
+          tool_calls: [],
+          cited_skus: [],
+        }
+      ]);
+      const [input, setInput] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [sessionId] = useState(() => 'sess-' + Math.random().toString(36).substring(2, 9));
+      const endRef = useRef(null);
+
+      useEffect(() => {
+        endRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [messages, loading]);
+
+      const handleSend = () => {
+        if (!input.trim() || loading) return;
+        const userMsg = input.trim();
+        setInput('');
+        setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
+        setLoading(true);
+
+        fetch('/api/assistant/chat/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            session_id: sessionId,
+            dealer_id: dealerId,
+            message: userMsg,
+          }),
+        })
+          .then(r => r.json())
+          .then(data => {
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              content: data.reply,
+              tool_calls: data.tool_calls || [],
+              cited_skus: data.cited_skus || [],
+              actions: data.actions || [],
+            }]);
+            setLoading(false);
+          })
+          .catch(() => {
+            setMessages(prev => [...prev, {
+              role: 'assistant',
+              content: 'Sorry, I encountered an error communicating with the DealerDesk engine.',
+            }]);
+            setLoading(false);
+          });
+      };
+
+      return (
+        <div class="max-w-4xl mx-auto bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden flex flex-col h-[75vh]">
+          {/* Assistant Header */}
+          <div class="px-6 py-4 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-bold text-white text-xs">
+                AI
+              </div>
+              <div>
+                <h3 class="font-bold text-sm text-white">DealerDesk Conversational Assistant</h3>
+                <p class="text-xs text-slate-400">Gemini Tool Calling · Live DB Grounded · Prompt-Safe</p>
+              </div>
+            </div>
+            <span class="text-xs bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">Session Active</span>
+          </div>
+
+          {/* Messages Area */}
+          <div class="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
+            {messages.map((m, idx) => (
+              <div key={idx} class={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
+                <div class={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+                  m.role === 'user'
+                    ? 'bg-indigo-600 text-white rounded-tr-none'
+                    : 'bg-slate-950 border border-slate-800 text-slate-200 rounded-tl-none'
+                }`}>
+                  <p class="whitespace-pre-line">{m.content}</p>
+
+                  {/* Tool Call Badges */}
+                  {m.tool_calls && m.tool_calls.length > 0 && (
+                    <div class="mt-2.5 pt-2 border-t border-slate-800/80 flex flex-wrap gap-1.5 items-center">
+                      <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Tools Executed:</span>
+                      {m.tool_calls.map((tc, tidx) => (
+                        <span key={tidx} class="text-[11px] font-mono bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-2 py-0.5 rounded">
+                          {tc.name}({JSON.stringify(tc.arguments || {})})
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Cited SKUs */}
+                  {m.cited_skus && m.cited_skus.length > 0 && (
+                    <div class="mt-2 flex flex-wrap gap-1 items-center">
+                      <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Referenced SKUs:</span>
+                      {m.cited_skus.map(sku => (
+                        <span key={sku} class="text-xs font-mono font-bold bg-amber-400/10 text-amber-400 border border-amber-400/20 px-1.5 py-0.5 rounded">
+                          {sku}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {loading && (
+              <div class="flex items-center gap-2 text-xs text-slate-400 p-2">
+                <span class="w-2 h-2 rounded-full bg-indigo-500 animate-ping"></span>
+                Dealer Assistant is executing catalogue tools...
+              </div>
+            )}
+            <div ref={endRef} />
+          </div>
+
+          {/* Quick Prompts Bar */}
+          <div class="px-6 py-2 bg-slate-950 border-t border-slate-800 flex items-center gap-2 overflow-x-auto custom-scrollbar text-xs">
+            <span class="text-slate-500 whitespace-nowrap">Try:</span>
+            <button onClick={() => setInput("Do you have brake pads for a Pulsar 150?")} class="bg-slate-900 border border-slate-800 hover:text-white px-2.5 py-1 rounded-lg text-slate-400 whitespace-nowrap">"Brake pads for Pulsar 150"</button>
+            <button onClick={() => setInput("Check stock for BRK-1044")} class="bg-slate-900 border border-slate-800 hover:text-white px-2.5 py-1 rounded-lg text-slate-400 whitespace-nowrap">"Check stock for BRK-1044"</button>
+            <button onClick={() => setInput("Order 3 units of BRK-1044")} class="bg-slate-900 border border-slate-800 hover:text-white px-2.5 py-1 rounded-lg text-slate-400 whitespace-nowrap">"Order 3 units of BRK-1044"</button>
+          </div>
+
+          {/* Input Box */}
+          <div class="p-4 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Ask for parts, check inventory or create draft orders..."
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSend()}
+              class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+            />
+            <button
+              onClick={handleSend}
+              disabled={loading || !input.trim()}
+              class="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-semibold px-5 py-3 rounded-xl transition-all">
+              Send
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ---- View 4: Demand Forecasting & Reorders --------------------------------
+    function ForecastReorderView() {
+      const [reorders, setReorders] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [filter, setFilter] = useState('all');
+
+      useEffect(() => {
+        fetch('/api/reorder-suggestions/')
+          .then(r => r.json())
+          .then(data => {
+            setReorders(data.results || []);
+            setLoading(false);
+          })
+          .catch(() => setLoading(false));
+      }, []);
+
+      const filtered = reorders.filter(item => {
+        if (filter === 'reorder') return item.reorder_qty > 0;
+        if (filter === 'ok') return item.reorder_qty === 0;
+        return true;
+      });
+
+      return (
+        <div class="space-y-6">
+          <div class="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h2 class="text-base font-bold text-white">Demand Forecasting & Dynamic Reorder Suggestions</h2>
+              <p class="text-xs text-slate-400">40 SKUs evaluated with safety stock formula: Safety = ⌈1.65 × σ × √L⌉</p>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                onClick={() => setFilter('all')}
+                class={`px-3 py-1.5 text-xs rounded-xl font-medium ${filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                All 40 SKUs
+              </button>
+              <button
+                onClick={() => setFilter('reorder')}
+                class={`px-3 py-1.5 text-xs rounded-xl font-medium ${filter === 'reorder' ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                Reorder Needed ({reorders.filter(r => r.reorder_qty > 0).length})
+              </button>
+              <button
+                onClick={() => setFilter('ok')}
+                class={`px-3 py-1.5 text-xs rounded-xl font-medium ${filter === 'ok' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'}`}>
+                Stock Adequate ({reorders.filter(r => r.reorder_qty === 0).length})
+              </button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div class="py-20 text-center text-slate-500">Calculating safety stock and lead time demand...</div>
+          ) : (
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="bg-slate-950 border-b border-slate-800 text-slate-400 font-semibold">
+                    <tr>
+                      <th class="py-3 px-4">SKU</th>
+                      <th class="py-3 px-4">Lead Time (L)</th>
+                      <th class="py-3 px-4">Lead Time Demand</th>
+                      <th class="py-3 px-4">Safety Stock</th>
+                      <th class="py-3 px-4">Reorder Point</th>
+                      <th class="py-3 px-4">Current Stock</th>
+                      <th class="py-3 px-4">Suggested Reorder</th>
+                      <th class="py-3 px-4">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-800/60 font-medium">
+                    {filtered.map(row => (
+                      <tr key={row.sku} class="hover:bg-slate-800/40 transition-colors">
+                        <td class="py-3 px-4 font-mono font-bold text-amber-400">{row.sku}</td>
+                        <td class="py-3 px-4 text-slate-300">{row.lead_time_weeks} week(s)</td>
+                        <td class="py-3 px-4 text-slate-300">{row.lead_time_demand} units</td>
+                        <td class="py-3 px-4 text-slate-300">{row.safety_stock} units</td>
+                        <td class="py-3 px-4 font-semibold text-white">{row.reorder_point}</td>
+                        <td class="py-3 px-4 text-slate-300">{row.current_stock}</td>
+                        <td class="py-3 px-4">
+                          {row.reorder_qty > 0 ? (
+                            <span class="inline-flex items-center gap-1 bg-red-500/10 text-red-400 font-bold px-2 py-0.5 rounded border border-red-500/20">
+                              Order {row.reorder_qty}
+                            </span>
+                          ) : (
+                            <span class="inline-flex items-center gap-1 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/20">
+                              0 (Sufficient)
+                            </span>
+                          )}
+                        </td>
+                        <td class="py-3 px-4">
+                          <button
+                            onClick={() => window.open(`/api/forecast/${row.sku}/`, '_blank')}
+                            class="text-indigo-400 hover:text-indigo-300 text-xs underline">
+                            View 4W Forecast
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ---- View 5: Supplier Sync ------------------------------------------------
+    function SupplierSyncView({ showAlert }) {
+      const [loading, setLoading] = useState(false);
+      const [result, setResult] = useState(null);
+
+      const triggerSync = () => {
+        setLoading(true);
+        fetch('/api/sync/supplier/', { method: 'POST' })
+          .then(async r => {
+            const data = await r.json();
+            if (!r.ok) throw data;
+            return data;
+          })
+          .then(data => {
+            setResult(data);
+            setLoading(false);
+            showAlert('success', 'Sync Completed', `Created: ${data.created}, Updated: ${data.updated}, Unchanged: ${data.unchanged}`);
+          })
+          .catch(err => {
+            setLoading(false);
+            const msg = err?.error?.message || 'Sync failed. Ensure supplier mock is running on port 8099.';
+            showAlert('error', 'Sync Failed', msg);
+          });
+      };
+
+      return (
+        <div class="max-w-2xl mx-auto space-y-6">
+          <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 text-center space-y-4">
+            <div class="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center mx-auto text-indigo-400 text-xl font-bold">
+              ⇄
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-white">Supplier Catalogue Ingestion</h2>
+              <p class="text-xs text-slate-400 max-w-md mx-auto mt-1">
+                Paginates through supplier API feeds with exponential backoff on 5xx, respects Retry-After on 429, resolves SKU duplicates by latest timestamp, and leaves distributor stock untouched.
+              </p>
+            </div>
+
+            <button
+              onClick={triggerSync}
+              disabled={loading}
+              class="bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-600/20 disabled:opacity-40">
+              {loading ? 'Running Full Synchronization...' : 'Run Supplier Sync Now'}
+            </button>
+          </div>
+
+          {result && (
+            <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
+              <h3 class="font-bold text-sm text-white border-b border-slate-800 pb-2">Sync Ingestion Report</h3>
+              <div class="grid grid-cols-3 gap-3 text-center">
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div class="text-xs text-slate-400">Created</div>
+                  <div class="text-xl font-bold text-emerald-400">{result.created}</div>
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div class="text-xs text-slate-400">Updated</div>
+                  <div class="text-xl font-bold text-blue-400">{result.updated}</div>
+                </div>
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800">
+                  <div class="text-xs text-slate-400">Unchanged</div>
+                  <div class="text-xl font-bold text-slate-300">{result.unchanged}</div>
+                </div>
+              </div>
+
+              <div class="text-xs text-slate-400 flex justify-between pt-2">
+                <span>Pages Fetched: <b class="text-white">{result.pages_fetched}</b></span>
+                <span>Requests Made: <b class="text-white">{result.requests_made}</b></span>
+                <span>Rejected Items: <b class="text-white">{result.rejected?.length || 0}</b></span>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

@@ -35,10 +35,17 @@ from core.services.assistant_service import chat_turn
 from core.utils import error_response
 
 
+from django.shortcuts import render
+
 class StandardPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
+
+
+class PortalView(APIView):
+    def get(self, request):
+        return render(request, "portal.html")
 
 
 class HealthView(APIView):
