@@ -1,7 +1,7 @@
 from decimal import Decimal
 import hashlib
 import json
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.utils import timezone
 
 from core.models import Product, Dealer, Order, OrderItem, OrderStatus, DailyOrderSequence
@@ -79,7 +79,10 @@ def generate_order_number() -> str:
     date_str = now.strftime("%Y%m%d")
     
     with transaction.atomic():
-        seq_obj, _ = DailyOrderSequence.objects.select_for_update().get_or_create(date_str=date_str)
+        try:
+            seq_obj, _ = DailyOrderSequence.objects.select_for_update().get_or_create(date_str=date_str)
+        except IntegrityError:
+            seq_obj = DailyOrderSequence.objects.select_for_update().get(date_str=date_str)
         seq_obj.last_seq += 1
         seq_obj.save(update_fields=["last_seq"])
         seq_num = seq_obj.last_seq
@@ -109,7 +112,7 @@ def validate_order_items(items_data: list) -> list[dict]:
         seen_skus.add(sku)
 
         quantity = item.get("quantity")
-        if quantity is None or not isinstance(quantity, int) or quantity < 1:
+        if quantity is None or type(quantity) is not int or quantity < 1:
             raise ValidationException(f"Quantity for SKU '{sku}' must be an integer greater than or equal to 1.")
 
         validated.append({"sku": sku, "quantity": quantity})
@@ -149,51 +152,60 @@ def create_draft_order(dealer_id: int, items_data: list, idempotency_key: str = 
         if sku not in products_by_sku:
             raise ValidationException(f"Product with SKU '{sku}' does not exist.")
 
-    with transaction.atomic():
-        order_number = generate_order_number()
-        order = Order.objects.create(
-            order_number=order_number,
-            dealer=dealer,
-            status=OrderStatus.DRAFT,
-            idempotency_key=idempotency_key,
-            idempotency_hash=body_hash,
-        )
-
-        subtotal = Decimal("0.00")
-        tax_total = Decimal("0.00")
-        order_items = []
-
-        for it in validated_items:
-            product = products_by_sku[it["sku"]]
-            qty = it["quantity"]
-            unit_price = product.price
-
-            line_subtotal, line_tax, line_total = calculate_line_amounts(qty, unit_price)
-            subtotal += line_subtotal
-            tax_total += line_tax
-
-            order_items.append(
-                OrderItem(
-                    order=order,
-                    product=product,
-                    sku=product.sku,
-                    name=product.name,
-                    quantity=qty,
-                    unit_price=unit_price,
-                    line_subtotal=line_subtotal,
-                    line_tax=line_tax,
-                    line_total=line_total,
-                )
+    try:
+        with transaction.atomic():
+            order_number = generate_order_number()
+            order = Order.objects.create(
+                order_number=order_number,
+                dealer=dealer,
+                status=OrderStatus.DRAFT,
+                idempotency_key=idempotency_key,
+                idempotency_hash=body_hash,
             )
 
-        OrderItem.objects.bulk_create(order_items)
+            subtotal = Decimal("0.00")
+            tax_total = Decimal("0.00")
+            order_items = []
 
-        order.subtotal = subtotal
-        order.tax_total = tax_total
-        order.grand_total = subtotal + tax_total
-        order.save(update_fields=["subtotal", "tax_total", "grand_total"])
+            for it in validated_items:
+                product = products_by_sku[it["sku"]]
+                qty = it["quantity"]
+                unit_price = product.price
 
-    return order, True
+                line_subtotal, line_tax, line_total = calculate_line_amounts(qty, unit_price)
+                subtotal += line_subtotal
+                tax_total += line_tax
+
+                order_items.append(
+                    OrderItem(
+                        order=order,
+                        product=product,
+                        sku=product.sku,
+                        name=product.name,
+                        quantity=qty,
+                        unit_price=unit_price,
+                        line_subtotal=line_subtotal,
+                        line_tax=line_tax,
+                        line_total=line_total,
+                    )
+                )
+
+            OrderItem.objects.bulk_create(order_items)
+
+            order.subtotal = subtotal
+            order.tax_total = tax_total
+            order.grand_total = subtotal + tax_total
+            order.save(update_fields=["subtotal", "tax_total", "grand_total"])
+
+        return order, True
+    except IntegrityError:
+        if idempotency_key:
+            existing = Order.objects.filter(idempotency_key=idempotency_key).first()
+            if existing:
+                if existing.idempotency_hash and existing.idempotency_hash != body_hash:
+                    raise IdempotencyConflictException()
+                return existing, False
+        raise
 
 
 def update_draft_order(order: Order, items_data: list) -> Order:
@@ -284,14 +296,25 @@ def confirm_order(order: Order) -> Order:
         if short_lines:
             raise InsufficientStockException(details=short_lines, message=". ".join(sentences))
 
-        # Deduct stock and save
+        # Deduct stock and lock item prices at confirmation time
+        subtotal = Decimal("0.00")
+        tax_total = Decimal("0.00")
         for it in items:
             p = locked_products[it.sku]
             p.stock -= it.quantity
             p.save(update_fields=["stock", "updated_at"])
 
+            it.unit_price = p.price
+            it.line_subtotal, it.line_tax, it.line_total = calculate_line_amounts(it.quantity, it.unit_price)
+            it.save(update_fields=["unit_price", "line_subtotal", "line_tax", "line_total"])
+            subtotal += it.line_subtotal
+            tax_total += it.line_tax
+
+        order.subtotal = subtotal
+        order.tax_total = tax_total
+        order.grand_total = subtotal + tax_total
         order.status = OrderStatus.CONFIRMED
-        order.save(update_fields=["status", "updated_at"])
+        order.save(update_fields=["status", "subtotal", "tax_total", "grand_total", "updated_at"])
 
     return order
 

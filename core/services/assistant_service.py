@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Tool declarations for Gemini
 GEMINI_TOOLS = [
     {
-        "function_declarations": [
+        "functionDeclarations": [
             {
                 "name": "search_parts",
                 "description": "Search the catalogue for spare parts by query keyword, vehicle fitment, or category.",
@@ -175,7 +175,7 @@ def run_gemini_turn(gemini_key: str, contents: list[dict]) -> tuple[str, list[di
     Supports gemini-2.5-flash and gemini-1.5-flash.
     Returns (reply, tool_calls_log, actions_log).
     """
-    model_name = "gemini-2.5-flash"
+    model_name = getattr(settings, "GEMINI_MODEL", os.environ.get("GEMINI_MODEL", "gemini-1.5-flash"))
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
 
     tool_calls_log = []

@@ -97,6 +97,13 @@ class Order(models.Model):
     class Meta:
         db_table = "orders"
         ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["idempotency_key"],
+                condition=models.Q(idempotency_key__isnull=False),
+                name="unique_order_idempotency_key",
+            )
+        ]
 
     def __str__(self):
         return f"{self.order_number} ({self.status})"

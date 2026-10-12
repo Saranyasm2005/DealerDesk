@@ -56,7 +56,7 @@ The tool-calling loop is implemented in [`core/services/assistant_service.py:180
    - The user's `session_id`, `dealer_id`, and `message` arrive at `POST /api/assistant/chat/`.
    - Previous conversation turns are queried from `AssistantMessage.objects.filter(session_id=session_id)` and formatted into the Gemini multi-turn payload.
 2. **Model Invocation with Tools ([`core/services/assistant_service.py:192-207`](file:///D:/vikmo/core/services/assistant_service.py#L192-L207))**:
-   - The payload sends `contents`, system instructions, and tool definitions (`search_parts`, `check_stock`, `create_draft_order`) to `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`.
+   - The payload sends `contents`, system instructions, and tool definitions (`search_parts`, `check_stock`, `create_draft_order`) to `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`.
 3. **Function Call Interception ([`core/services/assistant_service.py:221-229`](file:///D:/vikmo/core/services/assistant_service.py#L221-L229))**:
    - If the candidate contains `functionCall` items, the loop intercepts them, logs them in `tool_calls_log`, and appends the model's function call message to `contents`.
 4. **Local Tool Execution ([`core/services/assistant_service.py:234-255`](file:///D:/vikmo/core/services/assistant_service.py#L234-L255))**:

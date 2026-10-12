@@ -147,7 +147,7 @@ class InventoryUpdateView(APIView):
             return error_response("NOT_FOUND", f"Product with SKU '{sku}' not found.", status=404)
 
         quantity = request.data.get("quantity")
-        if quantity is None or not isinstance(quantity, int) or quantity < 0:
+        if quantity is None or type(quantity) is not int or quantity < 0:
             return error_response("VALIDATION_ERROR", "Quantity must be an integer greater than or equal to 0.", status=400)
 
         product.stock = quantity
@@ -241,9 +241,29 @@ class OrderListCreateView(APIView):
 class OrderDetailView(APIView):
     def get(self, request, order_number):
         try:
-            order = Order.objects.prefetch_related("items").get(order_number=order_number)
+            order = Order.objects.prefetch_related("items__product").get(order_number=order_number)
         except Order.DoesNotExist:
             return error_response("NOT_FOUND", f"Order '{order_number}' not found.", status=404)
+
+        if order.status == OrderStatus.DRAFT:
+            from core.utils import calculate_line_amounts
+            changed = False
+            subtotal = Decimal("0.00")
+            tax_total = Decimal("0.00")
+            for it in order.items.all():
+                if it.unit_price != it.product.price:
+                    it.unit_price = it.product.price
+                    it.line_subtotal, it.line_tax, it.line_total = calculate_line_amounts(it.quantity, it.unit_price)
+                    it.save(update_fields=["unit_price", "line_subtotal", "line_tax", "line_total"])
+                    changed = True
+                subtotal += it.line_subtotal
+                tax_total += it.line_tax
+            if changed:
+                order.subtotal = subtotal
+                order.tax_total = tax_total
+                order.grand_total = subtotal + tax_total
+                order.save(update_fields=["subtotal", "tax_total", "grand_total", "updated_at"])
+
         return Response(OrderSerializer(order).data)
 
     def put(self, request, order_number):

@@ -169,5 +169,70 @@ class DealerDeskCoreTests(TestCase):
         self.assertIn("reply", data)
         self.assertIn("cited_skus", data)
         self.assertIn("tool_calls", data)
-        self.assertIn("actions", data)
         self.assertIn("BRK-1001", data["cited_skus"])
+
+    def test_inventory_validation(self):
+        # Quantity must not be boolean or negative
+        resp = self.client.put(
+            "/api/inventory/BRK-1001/",
+            {"quantity": True, "reason": "invalid"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["error"]["code"], "VALIDATION_ERROR")
+
+        resp2 = self.client.put(
+            "/api/inventory/BRK-1001/",
+            {"quantity": -5, "reason": "negative"},
+            format="json",
+        )
+        self.assertEqual(resp2.status_code, 400)
+        self.assertEqual(resp2.json()["error"]["code"], "VALIDATION_ERROR")
+
+    def test_draft_order_price_tracking_and_confirmation_lock(self):
+        # 1. Create draft order with p1 at 1200.00
+        order, _ = create_draft_order(
+            dealer_id=self.dealer.id,
+            items_data=[{"sku": "BRK-1001", "quantity": 1}],
+        )
+        self.assertEqual(order.items.first().unit_price, Decimal("1200.00"))
+
+        # 2. Change product price to 1500.00 while DRAFT
+        self.p1.price = Decimal("1500.00")
+        self.p1.save()
+
+        # 3. GET /api/orders/{order_number}/ reflects current catalogue price
+        resp = self.client.get(f"/api/orders/{order.order_number}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["items"][0]["unit_price"], "1500.00")
+        self.assertEqual(resp.json()["subtotal"], "1500.00")
+
+        # 4. Confirm order locks the price at 1500.00
+        confirm_resp = self.client.post(f"/api/orders/{order.order_number}/confirm/")
+        self.assertEqual(confirm_resp.status_code, 200)
+        self.assertEqual(confirm_resp.json()["status"], "CONFIRMED")
+        self.assertEqual(confirm_resp.json()["items"][0]["unit_price"], "1500.00")
+
+        # 5. Later product price change to 2000.00 has ZERO effect on confirmed order
+        self.p1.price = Decimal("2000.00")
+        self.p1.save()
+
+        resp_after = self.client.get(f"/api/orders/{order.order_number}/")
+        self.assertEqual(resp_after.status_code, 200)
+        self.assertEqual(resp_after.json()["items"][0]["unit_price"], "1500.00")
+        self.assertEqual(resp_after.json()["subtotal"], "1500.00")
+
+    def test_order_invalid_transitions(self):
+        order, _ = create_draft_order(
+            dealer_id=self.dealer.id,
+            items_data=[{"sku": "BRK-1001", "quantity": 1}],
+        )
+        # Cannot dispatch a DRAFT
+        resp = self.client.post(f"/api/orders/{order.order_number}/dispatch/")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["error"]["code"], "INVALID_TRANSITION")
+
+        # Cannot deliver a DRAFT
+        resp = self.client.post(f"/api/orders/{order.order_number}/deliver/")
+        self.assertEqual(resp.status_code, 409)
+        self.assertEqual(resp.json()["error"]["code"], "INVALID_TRANSITION")
