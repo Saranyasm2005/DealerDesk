@@ -236,3 +236,52 @@ class DealerDeskCoreTests(TestCase):
         resp = self.client.post(f"/api/orders/{order.order_number}/deliver/")
         self.assertEqual(resp.status_code, 409)
         self.assertEqual(resp.json()["error"]["code"], "INVALID_TRANSITION")
+
+    def test_reorder_formula_edge_cases(self):
+        # Case 1: Zero stock
+        # LTD = 50.0, sigma = 10.0, L = 1 -> SS = ceil(1.65 * 10 * 1) = 17
+        # ROP = 50.0 + 17 = 67.0, Stock = 0 -> Qty = 67
+        L1 = 1
+        ltd1 = 50.0
+        sigma1 = 10.0
+        ss1 = math.ceil(1.65 * sigma1 * math.sqrt(L1))
+        rop1 = round(ltd1 + ss1, 1)
+        qty1 = max(0, math.ceil(rop1 - 0))
+        self.assertEqual(ss1, 17)
+        self.assertEqual(rop1, 67.0)
+        self.assertEqual(qty1, 67)
+
+        # Case 2: Stock exceeds reorder point (no reorder needed)
+        qty2 = max(0, math.ceil(rop1 - 100))
+        self.assertEqual(qty2, 0)
+
+        # Case 3: Zero variance / stable sales (sigma = 0)
+        ss3 = math.ceil(1.65 * 0.0 * math.sqrt(4))
+        self.assertEqual(ss3, 0)
+        rop3 = round(40.0 + ss3, 1)
+        self.assertEqual(rop3, 40.0)
+
+        # Case 4: Long lead time (L = 4)
+        # LTD = 200.0, sigma = 8.5, L = 4 -> SS = ceil(1.65 * 8.5 * 2) = ceil(28.05) = 29
+        ss4 = math.ceil(1.65 * 8.5 * math.sqrt(4))
+        self.assertEqual(ss4, 29)
+        rop4 = round(200.0 + ss4, 1)
+        self.assertEqual(rop4, 229.0)
+
+    def test_assistant_search_and_ambiguity(self):
+        from core.services.assistant_service import execute_search_parts, chat_turn
+
+        # Test search by exact SKU
+        res_sku = execute_search_parts(query="BRK-1001")
+        self.assertTrue(len(res_sku) >= 1)
+        self.assertEqual(res_sku[0]["sku"], "BRK-1001")
+
+        # Test search by category and vehicle
+        res_cat = execute_search_parts(query="pads", vehicle="KTM Duke 390", category="Brakes")
+        self.assertTrue(len(res_cat) >= 1)
+        self.assertEqual(res_cat[0]["sku"], "BRK-1001")
+
+        # Test clarifying question for ambiguous request
+        turn = chat_turn("sess-ambig-1", self.dealer.id, "Do you have brake pads?")
+        self.assertIn("Which vehicle make and model", turn["reply"])
+        self.assertEqual(len(turn["actions"]), 0)

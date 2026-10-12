@@ -1,3 +1,4 @@
+import os
 from decimal import Decimal
 import json
 import logging
@@ -34,7 +35,7 @@ GEMINI_TOOLS = [
                         },
                         "category": {
                             "type": "STRING",
-                            "description": "Category name, e.g. 'Brakes', 'Filters', 'Electricals'",
+                            "description": "Category name, e.g. 'Brakes', 'Filters', 'Lighting & Electrical'",
                         },
                     },
                     "required": ["query"],
@@ -71,6 +72,7 @@ GEMINI_TOOLS = [
                                 "properties": {
                                     "sku": {"type": "STRING"},
                                     "quantity": {"type": "INTEGER"},
+                                    "unit_price": {"type": "STRING"},
                                 },
                                 "required": ["sku", "quantity"],
                             },
@@ -100,31 +102,103 @@ CRITICAL RULES:
 
 
 def execute_search_parts(query: str = "", vehicle: str = None, category: str = None) -> list[dict]:
-    """Execute search_parts tool against the Product table."""
+    """
+    Execute search_parts tool against the Product table.
+    Performs flexible filtering, word-boundary relevance scoring, and stock prioritization.
+    """
     qs = Product.objects.all()
 
     if vehicle:
         qs = qs.filter(vehicle_fitment__icontains=vehicle.strip())
     if category:
-        qs = qs.filter(category__iexact=category.strip())
-    STOP_WORDS = {"do", "you", "have", "for", "a", "an", "the", "in", "is", "of", "with", "me", "any", "what", "how", "i", "can", "please", "some", "tell", "we", "us", "are", "there"}
-    if query:
-        raw_words = re.findall(r"\b[A-Za-z0-9-]+\b", query)
-        meaningful_words = [w for w in raw_words if w.lower() not in STOP_WORDS]
-        if meaningful_words:
+        cat_raw = category.strip()
+        cat_clean = cat_raw.rstrip("s").rstrip("es")
+        qs = qs.filter(Q(category__icontains=cat_raw) | Q(category__icontains=cat_clean))
+
+    STOP_WORDS = {
+        "do", "you", "have", "for", "a", "an", "the", "in", "is", "of", "with",
+        "me", "any", "what", "how", "i", "can", "please", "some", "tell", "we", "us", "are", "there"
+    }
+    query_str = (query or "").strip()
+    words = []
+    if query_str:
+        raw_words = re.findall(r"\b[A-Za-z0-9-]+\b", query_str)
+        words = [w.lower() for w in raw_words if w.lower() not in STOP_WORDS]
+        if words:
             word_q = Q()
-            for w in meaningful_words:
+            for w in words:
                 word_q |= (
-                    Q(name__icontains=w)
-                    | Q(sku__icontains=w)
+                    Q(sku__iexact=w)
+                    | Q(name__icontains=w)
                     | Q(brand__icontains=w)
                     | Q(vehicle_fitment__icontains=w)
                     | Q(category__icontains=w)
                 )
             qs = qs.filter(word_q)
 
+    candidates = list(qs[:120])
+    scored = []
+    q_lower = query_str.lower()
+
+    for p in candidates:
+        score = 0
+        p_sku = p.sku.lower()
+        p_name = p.name.lower()
+        p_fit = p.vehicle_fitment.lower()
+        p_brand = p.brand.lower()
+        p_cat = p.category.lower()
+
+        # Exact SKU match
+        if q_lower and q_lower == p_sku:
+            score += 200
+        elif any(w == p_sku for w in words):
+            score += 150
+
+        # Exact phrase in name
+        if q_lower and q_lower in p_name:
+            score += 80
+
+        # Exact phrase in fitment
+        if q_lower and q_lower in p_fit:
+            score += 40
+
+        matched_any_word = False
+        # Exact token / word boundary matching (\bword\b)
+        for w in words:
+            if re.search(rf"\b{re.escape(w)}\b", p_name):
+                score += 30
+                matched_any_word = True
+            elif w in p_name and len(w) >= 4:
+                score += 10
+                matched_any_word = True
+
+            if re.search(rf"\b{re.escape(w)}\b", p_fit):
+                score += 20
+                matched_any_word = True
+            elif w in p_fit and len(w) >= 5:
+                score += 5
+                matched_any_word = True
+
+            if re.search(rf"\b{re.escape(w)}\b", p_brand):
+                score += 15
+                matched_any_word = True
+            if re.search(rf"\b{re.escape(w)}\b", p_cat):
+                score += 15
+                matched_any_word = True
+
+        if words and not matched_any_word and score < 50:
+            continue
+
+        # Availability bonus
+        if p.stock > 0:
+            score += 2
+
+        scored.append((score, p))
+
+    scored.sort(key=lambda x: (-x[0], -x[1].stock))
+
     results = []
-    for p in qs[:8]:
+    for score, p in scored[:8]:
         results.append({
             "sku": p.sku,
             "name": p.name,
@@ -318,10 +392,18 @@ def deterministic_assistant_fallback(dealer_id: int, message: str) -> tuple[str,
             return reply, tool_calls, actions, cited_skus
 
     # Ambiguity check: user asks for a part without mentioning a vehicle
-    vehicle_keywords = ["pulsar", "duke", "splendor", "activa", "bullet", "classic", "apache", "fz", "jupiter", "shine", "ktm", "bajaj", "hero", "honda", "yamaha", "royal enfield", "tvs"]
+    vehicle_keywords = [
+        "pulsar", "duke", "splendor", "activa", "bullet", "classic", "apache", "fz", "jupiter",
+        "shine", "ktm", "bajaj", "hero", "honda", "yamaha", "royal enfield", "tvs",
+        "creta", "i20", "thar", "baleno", "swift", "dominar", "xtreme", "hunter"
+    ]
     has_vehicle = any(vk in msg_lower for vk in vehicle_keywords)
 
-    part_keywords = ["brake pad", "chain", "sprocket", "oil filter", "air filter", "clutch", "headlight", "spark plug"]
+    part_keywords = [
+        "brake pad", "brake shoe", "brake disc", "brake rotor", "brake lever", "brake",
+        "chain", "sprocket", "oil filter", "air filter", "filter", "clutch", "headlight",
+        "spark plug", "tyre", "tire", "battery", "horn", "wiper", "mirror"
+    ]
     is_part_query = any(pk in msg_lower for pk in part_keywords)
 
     if is_part_query and not has_vehicle:
