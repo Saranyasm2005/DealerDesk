@@ -61,11 +61,21 @@ WSGI_APPLICATION = "dealerdesk.wsgi.application"
 
 # ---- Database: PostgreSQL only -------------------------------------------------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
+ALLOW_LOCAL_SQLITE = os.environ.get("ALLOW_LOCAL_SQLITE", "0") == "1"
+
+if not DATABASE_URL and ALLOW_LOCAL_SQLITE:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+elif not DATABASE_URL:
     raise ImproperlyConfigured("Set DATABASE_URL to a PostgreSQL URL, e.g. postgres://user:pass@localhost:5432/dealerdesk")
-DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=0)}
-if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql":
-    raise ImproperlyConfigured("DealerDesk requires PostgreSQL. SQLite can't test the concurrency rules.")
+else:
+    DATABASES = {"default": dj_database_url.parse(DATABASE_URL, conn_max_age=0)}
+    if DATABASES["default"]["ENGINE"] != "django.db.backends.postgresql" and not ALLOW_LOCAL_SQLITE:
+        raise ImproperlyConfigured("DealerDesk requires PostgreSQL. SQLite can't test the concurrency rules.")
 
 AUTH_PASSWORD_VALIDATORS = []
 
@@ -91,4 +101,4 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 SUPPLIER_API_URL = os.environ.get("SUPPLIER_API_URL", "http://127.0.0.1:8099")
-SUPPLIER_API_KEY = os.environ.get("SUPPLIER_API_KEY", "")
+SUPPLIER_API_KEY = os.environ.get("SUPPLIER_API_KEY", "dev-supplier-key")

@@ -107,16 +107,21 @@ def execute_search_parts(query: str = "", vehicle: str = None, category: str = N
         qs = qs.filter(vehicle_fitment__icontains=vehicle.strip())
     if category:
         qs = qs.filter(category__iexact=category.strip())
+    STOP_WORDS = {"do", "you", "have", "for", "a", "an", "the", "in", "is", "of", "with", "me", "any", "what", "how", "i", "can", "please", "some", "tell", "we", "us", "are", "there"}
     if query:
-        words = query.strip().split()
-        for w in words:
-            qs = qs.filter(
-                Q(name__icontains=w)
-                | Q(sku__icontains=w)
-                | Q(brand__icontains=w)
-                | Q(vehicle_fitment__icontains=w)
-                | Q(category__icontains=w)
-            )
+        raw_words = re.findall(r"\b[A-Za-z0-9-]+\b", query)
+        meaningful_words = [w for w in raw_words if w.lower() not in STOP_WORDS]
+        if meaningful_words:
+            word_q = Q()
+            for w in meaningful_words:
+                word_q |= (
+                    Q(name__icontains=w)
+                    | Q(sku__icontains=w)
+                    | Q(brand__icontains=w)
+                    | Q(vehicle_fitment__icontains=w)
+                    | Q(category__icontains=w)
+                )
+            qs = qs.filter(word_q)
 
     results = []
     for p in qs[:8]:

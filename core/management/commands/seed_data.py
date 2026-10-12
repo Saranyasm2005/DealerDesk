@@ -24,12 +24,19 @@ class Command(BaseCommand):
             return
 
         with transaction.atomic():
+            # Clean up test orders and line items first
+            from core.models import OrderItem, Order
+            OrderItem.objects.all().delete()
+            Order.objects.all().delete()
+
             # Seed catalogue
             cat_count = 0
+            valid_skus = set()
             with open(catalogue_path, encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     sku = row["sku"].strip()
+                    valid_skus.add(sku)
                     Product.objects.update_or_create(
                         sku=sku,
                         defaults={
@@ -43,13 +50,16 @@ class Command(BaseCommand):
                         },
                     )
                     cat_count += 1
+            Product.objects.exclude(sku__in=valid_skus).delete()
 
             # Seed dealers
             dlr_count = 0
+            valid_dealers = set()
             with open(dealers_path, encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     dealer_code = row["dealer_code"].strip()
+                    valid_dealers.add(dealer_code)
                     credit_limit_raw = row["credit_limit"].strip() if "credit_limit" in row else "0.00"
                     Dealer.objects.update_or_create(
                         dealer_code=dealer_code,
@@ -63,5 +73,6 @@ class Command(BaseCommand):
                         },
                     )
                     dlr_count += 1
+            Dealer.objects.exclude(dealer_code__in=valid_dealers).delete()
 
         self.stdout.write(self.style.SUCCESS(f"Successfully seeded {cat_count} products and {dlr_count} dealers."))
