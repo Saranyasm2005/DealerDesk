@@ -3,8 +3,7 @@
 **Repository:** https://github.com/Saranyasm2005/DealerDesk  
 **Track:** AI / ML Intern Track (with complete Order Engine, Supplier Sync, and Dealer Portal frontend bonus components)  
 **LLM Provider & Model:** Google Gemini (`gemini-1.5-flash`) via `GEMINI_API_KEY`  
-**Video Walkthrough Link:** *(Insert unlisted YouTube/Loom video link here)*  
-**Video Walkthrough Script:** See [`WALKTHROUGH_SCRIPT.md`](file:///d:/vikmo/WALKTHROUGH_SCRIPT.md) for full 5-minute timed talking points.  
+**Video Walkthrough Link: https://youtu.be/gfzVgREsMkI?si=Z0jd7LBDf7_B41bE
 
 ---
 
